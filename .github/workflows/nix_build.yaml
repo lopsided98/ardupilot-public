@@ -1,0 +1,16 @@
+name: "Build ArduPlane with Nix"
+on:
+  push:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
+    - uses: cachix/install-nix-action@v12
+    - run: nix-build -I nixpkgs=channel:nixpkgs-unstable
+    - uses: actions/upload-artifact@v1
+      with:
+        name: arduplane
+        path: result
