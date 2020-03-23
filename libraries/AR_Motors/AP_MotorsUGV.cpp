@@ -307,7 +307,7 @@ void AP_MotorsUGV::output(bool armed, float ground_speed, float dt)
     output_omni(armed, _steering, _throttle, _lateral);
 
     // output to sails
-    output_sail();
+    output_sail(armed);
 
     // send values to the PWM timers for output
     SRV_Channels::calc_pwm();
@@ -911,13 +911,21 @@ void AP_MotorsUGV::output_throttle(SRV_Channel::Aux_servo_function_t function, f
 }
 
 // output for sailboat's sails
-void AP_MotorsUGV::output_sail()
+void AP_MotorsUGV::output_sail(bool armed)
 {
     if (!has_sail()) {
         return;
     }
 
-    SRV_Channels::set_output_scaled(SRV_Channel::k_mainsail_sheet, _mainsail);
+    if (armed) {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_mainsail_sheet, _mainsail);
+    } else {
+        if (_disarm_disable_pwm) {
+            SRV_Channels::set_output_limit(SRV_Channel::k_mainsail_sheet, SRV_Channel::Limit::ZERO_PWM);
+        } else {
+            SRV_Channels::set_output_limit(SRV_Channel::k_mainsail_sheet, SRV_Channel::Limit::TRIM);
+        }
+    }
     SRV_Channels::set_output_scaled(SRV_Channel::k_wingsail_elevator, _wingsail);
     SRV_Channels::set_output_scaled(SRV_Channel::k_mast_rotation, _mast_rotation);
 }

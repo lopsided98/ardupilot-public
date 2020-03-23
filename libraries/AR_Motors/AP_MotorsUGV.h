@@ -168,7 +168,7 @@ private:
     void output_throttle(SRV_Channel::Aux_servo_function_t function, float throttle, float dt = 0.0f);
 
     // output for sailboat's mainsail in the range of 0 to 100 and wing sail in the range +- 100
-    void output_sail();
+    void output_sail(bool armed);
 
     // true if the vehicle has a mainsail or wing sail
     bool has_sail() const;
