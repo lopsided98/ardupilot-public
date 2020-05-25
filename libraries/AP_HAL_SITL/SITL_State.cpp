@@ -702,6 +702,7 @@ void SITL_State::_simulator_servos(struct sitl_input &input)
 
     // output at chosen framerate
     uint32_t now = AP_HAL::micros();
+    float delta_time = (now - last_update_usec) * 1e-6f;
     last_update_usec = now;
 
     float altitude = AP::baro().get_altitude();
@@ -715,9 +716,16 @@ void SITL_State::_simulator_servos(struct sitl_input &input)
     } else if (_sitl && (now - wind_start_delay_micros) > 5000000 ) {
         // The EKF does not like step inputs so this LPF keeps it happy.
         wind_speed =     _sitl->wind_speed_active     = (0.95f*_sitl->wind_speed_active)     + (0.05f*_sitl->wind_speed);
-        wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*_sitl->wind_direction);
         wind_dir_z =     _sitl->wind_dir_z_active     = (0.95f*_sitl->wind_dir_z_active)     + (0.05f*_sitl->wind_dir_z);
         
+        // AR(1) model of the wind direction. This fits fairly well with
+        // empirical wind measurements on a sailboat. The coefficients are
+        // automatically scaled with the time step to give them meaningful
+        // units. This also acts as a low pass filter like above.
+        wind_direction = _sitl->wind_direction_active = wrap_180(_sitl->wind_direction_active
+            + (-_sitl->wind_direction_freq * wrap_180(_sitl->wind_direction_active - _sitl->wind_direction)
+            + _sitl->wind_direction_noise * rand_normal(0, 1)) * delta_time);
+
         // pass wind into simulators using different wind types via param SIM_WIND_T*.
         switch (_sitl->wind_type) {
         case SITL::SIM::WIND_TYPE_SQRT:

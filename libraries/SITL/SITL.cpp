@@ -50,9 +50,7 @@ const AP_Param::GroupInfo SIM::var_info[] = {
     AP_GROUPINFO("DRIFT_SPEED",    5, SIM,  drift_speed, 0.05f),
     AP_GROUPINFO("DRIFT_TIME",     6, SIM,  drift_time,  5),
     AP_GROUPINFO("ENGINE_MUL",     8, SIM,  engine_mul,  1),
-    AP_GROUPINFO("WIND_SPD",       9, SIM,  wind_speed,  0),
-    AP_GROUPINFO("WIND_DIR",      10, SIM,  wind_direction,  180),
-    AP_GROUPINFO("WIND_TURB",     11, SIM,  wind_turbulance,  0),
+    AP_SUBGROUPEXTENSION("",       9, SIM,  var_wind),
     AP_GROUPINFO("SERVO_SPEED",   16, SIM,  servo_speed,  0.14),
     AP_GROUPINFO("BATT_VOLTAGE",  19, SIM,  batt_voltage,  12.6f),
     AP_GROUPINFO("BATT_CAP_AH",   20, SIM,  batt_capacity_ah,  0),
@@ -506,6 +504,19 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
     AP_SUBGROUPINFO(imu_tcal[2], "IMUT3_", 63, SIM, AP_InertialSensor::TCal),
 #endif
 #endif  // HAL_INS_TEMPERATURE_CAL_ENABLE
+    AP_GROUPEND
+};
+
+// Wind SITL parameters
+const AP_Param::GroupInfo SIM::var_wind[] = {
+    AP_GROUPINFO("WIND_SPD",      1, SIM,  wind_speed,  0),
+    AP_GROUPINFO("WIND_DIR",      2, SIM,  wind_direction,  180),
+    AP_GROUPINFO("WIND_TURB",     3, SIM,  wind_turbulance,  0),
+
+    // sailboat wind noise parameters
+    AP_GROUPINFO("WIND_DIR_FRQ",  4, SIM,  wind_direction_freq, 0),
+    AP_GROUPINFO("WIND_DIR_NSE",  5, SIM,  wind_direction_noise, 0),
+
     AP_GROUPEND
 };
     

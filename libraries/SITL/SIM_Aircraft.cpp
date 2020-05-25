@@ -320,38 +320,6 @@ void Aircraft::add_noise(float throttle)
 }
 
 /*
-  normal distribution random numbers
-  See
-  http://en.literateprograms.org/index.php?title=Special:DownloadCode/Box-Muller_transform_%28C%29&oldid=7011
-*/
-double Aircraft::rand_normal(double mean, double stddev)
-{
-    static double n2 = 0.0;
-    static int n2_cached = 0;
-    if (!n2_cached) {
-        double x, y, r;
-        do
-        {
-            x = 2.0 * rand()/RAND_MAX - 1;
-            y = 2.0 * rand()/RAND_MAX - 1;
-            r = x*x + y*y;
-        } while (is_zero(r) || r > 1.0);
-        const double d = sqrt(-2.0 * log(r)/r);
-        const double n1 = x * d;
-        n2 = y * d;
-        const double result = n1 * stddev + mean;
-        n2_cached = 1;
-        return result;
-    } else {
-        n2_cached = 0;
-        return n2 * stddev + mean;
-    }
-}
-
-
-
-
-/*
    fill a sitl_fdm structure from the simulator state
 */
 void Aircraft::fill_fdm(struct sitl_fdm &fdm)

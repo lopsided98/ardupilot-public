@@ -308,6 +308,9 @@ float rand_float(void);
 // generate a random Vector3f of size 1
 Vector3f rand_vec3f(void);
 
+// sample a random double from the normal distribution
+double rand_normal(double mean, double stddev);
+
 // return true if two rotations are equal
 bool rotation_equal(enum Rotation r1, enum Rotation r2) WARN_IF_UNUSED;
 

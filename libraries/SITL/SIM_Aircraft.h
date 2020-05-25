@@ -83,9 +83,6 @@ public:
     /* smooth sensors to provide kinematic consistancy */
     void smooth_sensors(void);
 
-    /* return normal distribution random numbers */
-    static double rand_normal(double mean, double stddev);
-
     // get frame rate of model in Hz
     float get_rate_hz(void) const { return rate_hz; }
 

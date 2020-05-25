@@ -591,12 +591,12 @@ void Frame::calculate_forces(const Aircraft &aircraft,
     const float gyro_noise = radians(0.1);
     const float accel_noise = 0.3;
     const float noise_scale = thrust.length() / thrust_max;
-    rot_accel += Vector3f(aircraft.rand_normal(0, 1),
-                          aircraft.rand_normal(0, 1),
-                          aircraft.rand_normal(0, 1)) * gyro_noise * noise_scale;
-    body_accel += Vector3f(aircraft.rand_normal(0, 1),
-                           aircraft.rand_normal(0, 1),
-                           aircraft.rand_normal(0, 1)) * accel_noise * noise_scale;
+    rot_accel += Vector3f(rand_normal(0, 1),
+                          rand_normal(0, 1),
+                          rand_normal(0, 1)) * gyro_noise * noise_scale;
+    body_accel += Vector3f(rand_normal(0, 1),
+                           rand_normal(0, 1),
+                           rand_normal(0, 1)) * accel_noise * noise_scale;
 }
 
 
