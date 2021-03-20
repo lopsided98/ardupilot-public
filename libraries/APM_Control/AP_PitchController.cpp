@@ -236,10 +236,10 @@ int32_t AP_PitchController::get_rate_out(float desired_rate, float scaler)
   Also returns the inverted flag and the estimated airspeed in m/s for
   use by the rest of the pitch controller
  */
-float AP_PitchController::_get_coordination_rate_offset(float &aspeed, bool &inverted) const
+float AP_PitchController::_get_coordination_rate_offset(float desired_roll, float &aspeed, bool &inverted) const
 {
 	float rate_offset;
-	float bank_angle = _ahrs.roll;
+	float bank_angle = desired_roll;
 
 	// limit bank angle between +- 80 deg if right way up
 	if (fabsf(bank_angle) < radians(90))	{
@@ -278,7 +278,7 @@ float AP_PitchController::_get_coordination_rate_offset(float &aspeed, bool &inv
 // 4) minimum FBW airspeed (metres/sec)
 // 5) maximum FBW airspeed (metres/sec)
 //
-int32_t AP_PitchController::get_servo_out(int32_t angle_err, float scaler, bool disable_integrator)
+int32_t AP_PitchController::get_servo_out(int32_t angle_err, int32_t desired_roll, float scaler, bool disable_integrator)
 {
 	// Calculate offset to pitch rate demand required to maintain pitch angle whilst banking
 	// Calculate ideal turn rate from bank angle and airspeed assuming a level coordinated turn
@@ -291,7 +291,7 @@ int32_t AP_PitchController::get_servo_out(int32_t angle_err, float scaler, bool 
         gains.tau.set(0.05f);
     }
 
-    rate_offset = _get_coordination_rate_offset(aspeed, inverted);
+	rate_offset = _get_coordination_rate_offset(radians(desired_roll / 100.0f), aspeed, inverted);
 	
 	// Calculate the desired pitch rate (deg/sec) from the angle error
     angle_err_deg = angle_err * 0.01;
