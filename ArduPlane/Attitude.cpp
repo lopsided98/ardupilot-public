@@ -167,7 +167,13 @@ void Plane::stabilize_pitch(float speed_scaler)
             demanded_pitch = landing.get_pitch_cd();
         }
 
-        pitch_out = pitchController.get_servo_out(demanded_pitch - ahrs.pitch_sensor, speed_scaler, disable_integrator);
+        Matrix3f demanded_orientation;
+        demanded_orientation.from_euler(0, radians(demanded_pitch / 100.0f), ahrs.yaw);
+        float pitch_error = -asinf(ahrs.get_rotation_body_to_ned().colz() * demanded_orientation.colx());
+        int32_t pitch_error_cd = degrees(pitch_error) * 100;
+
+        pitch_out = pitchController.get_servo_out(pitch_error_cd, speed_scaler,
+                                                  disable_integrator);
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitch_out);
 }
