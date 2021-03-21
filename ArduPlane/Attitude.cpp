@@ -102,14 +102,8 @@ bool Plane::stick_mixing_enabled(void)
   previously set nav_roll calculates roll servo_out to try to
   stabilize the plane at the given roll
  */
-void Plane::stabilize_roll(float speed_scaler)
+void Plane::stabilize_roll(float speed_scaler, bool disable_integrator)
 {
-    if (fly_inverted()) {
-        // Add 180 degrees to desired roll to fly upside down
-        nav_roll_cd += 18000;
-    }
-
-    bool disable_integrator = false;
     if (control_mode == &mode_stabilize && channel_roll->get_control_in() != 0) {
         disable_integrator = true;
     }
@@ -142,7 +136,6 @@ void Plane::stabilize_pitch(float speed_scaler)
         SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, 45*force_elevator);
         return;
     }
-    int32_t demanded_pitch = nav_pitch_cd + g.pitch_trim_cd + SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * g.kff_throttle_to_pitch;
     bool disable_integrator = false;
     if (control_mode == &mode_stabilize && channel_pitch->get_control_in() != 0) {
         disable_integrator = true;
@@ -158,18 +151,13 @@ void Plane::stabilize_pitch(float speed_scaler)
         */
         pitchController.decay_I();
     } else {
-        // if LANDING_FLARE RCx_OPTION switch is set and in FW mode, manual throttle,throttle idle then set pitch to LAND_PITCH_CD if flight option FORCE_FLARE_ATTITUDE is set
-        if (!quadplane.in_transition() &&
-            !control_mode->is_vtol_mode() &&
-            channel_throttle->in_trim_dz() &&
-            !control_mode->does_auto_throttle() &&
-            flare_mode == FlareMode::ENABLED_PITCH_TARGET) {
-            demanded_pitch = landing.get_pitch_cd();
-        }
-
-        Matrix3f demanded_orientation;
-        demanded_orientation.from_euler(0, radians(demanded_pitch / 100.0f), ahrs.yaw);
-        float pitch_error = -asinf(ahrs.get_rotation_body_to_ned().colz() * demanded_orientation.colx());
+        // Convert desired pitch from earth frame Euler angle to body frame. This
+        // reduces the elevator effort as bank angle increases and the elevator is
+        // no longer able to control earth frame pitch. At 90 degrees bank, the
+        // elevator will not be used at all.
+        Matrix3f desired_attitude;
+        desired_attitude.from_euler(0, radians(nav_pitch_cd / 100.0f), ahrs.yaw);
+        float pitch_error = -asinf(ahrs.get_rotation_body_to_ned().colz() * desired_attitude.colx());
         int32_t pitch_error_cd = degrees(pitch_error) * 100;
 
         pitch_out = pitchController.get_servo_out(pitch_error_cd, speed_scaler,
@@ -319,6 +307,7 @@ void Plane::stabilize_training(float speed_scaler)
         SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, rexpo);
     } else {
         // calculate what is needed to hold
+        calc_stabilize_roll();
         stabilize_roll(speed_scaler);
         if ((nav_roll_cd > 0 && rexpo < SRV_Channels::get_output_scaled(SRV_Channel::k_aileron)) ||
             (nav_roll_cd < 0 && rexpo > SRV_Channels::get_output_scaled(SRV_Channel::k_aileron))) {
@@ -330,6 +319,7 @@ void Plane::stabilize_training(float speed_scaler)
     if (training_manual_pitch) {
         SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pexpo);
     } else {
+        calc_stabilize_pitch();
         stabilize_pitch(speed_scaler);
         if ((nav_pitch_cd > 0 && pexpo < SRV_Channels::get_output_scaled(SRV_Channel::k_elevator)) ||
             (nav_pitch_cd < 0 && pexpo > SRV_Channels::get_output_scaled(SRV_Channel::k_elevator))) {
@@ -367,9 +357,7 @@ void Plane::stabilize_acro(float speed_scaler)
         }
         // try to hold the locked roll, with the integrator disabled
         nav_roll_cd = acro_state.locked_roll_cd;
-        SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, rollController.get_servo_out(wrap_180_cd(nav_roll_cd - ahrs.roll_sensor),
-                                                                                             speed_scaler,
-                                                                                             true));
+        stabilize_roll(speed_scaler, true);
     } else {
         /*
           aileron stick is non-zero, use pure rate control until the
@@ -391,9 +379,7 @@ void Plane::stabilize_acro(float speed_scaler)
         // try to hold the locked pitch. Note that we have the pitch
         // integrator enabled, which helps with inverted flight
         nav_pitch_cd = acro_state.locked_pitch_cd;
-        SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitchController.get_servo_out(nav_pitch_cd - ahrs.pitch_sensor,
-                                                                                               speed_scaler,
-                                                                                               false));
+        stabilize_pitch(speed_scaler);
     } else {
         /*
           user has non-zero pitch input, use a pure rate controller
@@ -470,6 +456,8 @@ void Plane::stabilize()
         if (g.stick_mixing == STICK_MIXING_FBW && control_mode != &mode_stabilize) {
             stabilize_stick_mixing_fbw();
         }
+        calc_stabilize_roll();
+        calc_stabilize_pitch();
         stabilize_roll(speed_scaler);
         stabilize_pitch(speed_scaler);
         if (g.stick_mixing == STICK_MIXING_DIRECT || control_mode == &mode_stabilize) {
@@ -525,6 +513,33 @@ void Plane::calc_throttle()
 /*****************************************
 * Calculate desired roll/pitch/yaw angles (in medium freq loop)
 *****************************************/
+
+/*
+  adjust the desired roll angle for stabilization modes
+*/
+void Plane::calc_stabilize_roll() {
+    if (fly_inverted()) {
+        // add 180 degrees to fly upside down
+        nav_roll_cd += 18000;
+    }
+}
+
+/*
+  adjust the desired pitch angle for stabilization modes
+*/
+void Plane::calc_stabilize_pitch() {
+    nav_pitch_cd += g.pitch_trim_cd +
+        SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * g.kff_throttle_to_pitch;
+
+    // if LANDING_FLARE RCx_OPTION switch is set and in FW mode, manual throttle, throttle idle then set pitch to LAND_PITCH_CD if flight option FORCE_FLARE_ATTITUDE is set
+    if (!quadplane.in_transition() &&
+        !control_mode->is_vtol_mode() &&
+        channel_throttle->in_trim_dz() &&
+        !control_mode->does_auto_throttle() &&
+        flare_mode == FlareMode::ENABLED_PITCH_TARGET) {
+        nav_pitch_cd = landing.get_pitch_cd();
+    }
+}
 
 /*
   calculate yaw control for coordinated flight

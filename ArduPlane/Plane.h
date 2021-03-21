@@ -843,13 +843,15 @@ private:
     void calc_nav_pitch();
     float get_speed_scaler(void);
     bool stick_mixing_enabled(void);
-    void stabilize_roll(float speed_scaler);
+    void stabilize_roll(float speed_scaler, bool disable_integrator = false);
     void stabilize_pitch(float speed_scaler);
     void stabilize_stick_mixing_direct();
     void stabilize_stick_mixing_fbw();
     void stabilize_yaw(float speed_scaler);
     void stabilize_training(float speed_scaler);
     void stabilize_acro(float speed_scaler);
+    void calc_stabilize_roll();
+    void calc_stabilize_pitch();
     void calc_nav_yaw_coordinated(float speed_scaler);
     void calc_nav_yaw_course(void);
     void calc_nav_yaw_ground(void);

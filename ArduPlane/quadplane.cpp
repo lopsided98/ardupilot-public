@@ -2354,6 +2354,8 @@ void QuadPlane::control_run(void)
     if (plane.control_mode->mode_number() == Mode::Number::QACRO) {
         plane.stabilize_acro(speed_scaler);
     } else {
+        plane.calc_stabilize_roll();
+        plane.calc_stabilize_pitch();
         plane.stabilize_roll(speed_scaler);
         plane.stabilize_pitch(speed_scaler);
     }
