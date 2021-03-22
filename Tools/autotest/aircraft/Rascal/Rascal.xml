@@ -529,5 +529,6 @@
     </output> -->
 
   <input port="5505"/>
+  <output name="localhost" type="FLIGHTGEAR" port="5503" protocol="udp" rate="60"/>
 
 </fdm_config>
