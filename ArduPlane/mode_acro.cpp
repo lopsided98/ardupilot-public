@@ -13,7 +13,7 @@ void ModeAcro::update()
 {
     // handle locked/unlocked control
     if (plane.acro_state.locked_roll) {
-        plane.nav_roll_cd = plane.acro_state.locked_roll_err;
+        plane.nav_roll_cd = plane.acro_state.locked_roll_cd;
     } else {
         plane.nav_roll_cd = plane.ahrs.roll_sensor;
     }

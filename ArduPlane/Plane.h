@@ -406,7 +406,7 @@ private:
     struct {
         bool locked_roll;
         bool locked_pitch;
-        float locked_roll_err;
+        float locked_roll_cd;
         int32_t locked_pitch_cd;
     } acro_state;
 

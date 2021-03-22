@@ -105,13 +105,8 @@ bool Plane::stick_mixing_enabled(void)
 void Plane::stabilize_roll(float speed_scaler)
 {
     if (fly_inverted()) {
-        // we want to fly upside down. We need to cope with wrap of
-        // the roll_sensor interfering with wrap of nav_roll, which
-        // would really confuse the PID code. The easiest way to
-        // handle this is to ensure both go in the same direction from
-        // zero
+        // Add 180 degrees to desired roll to fly upside down
         nav_roll_cd += 18000;
-        if (ahrs.roll_sensor < 0) nav_roll_cd -= 36000;
     }
 
     bool disable_integrator = false;
@@ -128,7 +123,7 @@ void Plane::stabilize_roll(float speed_scaler)
         */
         rollController.decay_I();
     } else {
-        roll_out = rollController.get_servo_out(nav_roll_cd - ahrs.roll_sensor, speed_scaler, disable_integrator);
+        roll_out = rollController.get_servo_out(wrap_180_cd(nav_roll_cd - ahrs.roll_sensor), speed_scaler, disable_integrator);
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, roll_out);
 }
@@ -362,15 +357,11 @@ void Plane::stabilize_acro(float speed_scaler)
          */
         if (!acro_state.locked_roll) {
             acro_state.locked_roll = true;
-            acro_state.locked_roll_err = 0;
-        } else {
-            acro_state.locked_roll_err += ahrs.get_gyro().x * G_Dt;
+            acro_state.locked_roll_cd = ahrs.roll_sensor;
         }
-        int32_t roll_error_cd = -ToDeg(acro_state.locked_roll_err)*100;
-        nav_roll_cd = ahrs.roll_sensor + roll_error_cd;
-        // try to reduce the integrated angular error to zero. We set
-        // 'stabilze' to true, which disables the roll integrator
-        SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, rollController.get_servo_out(roll_error_cd,
+        // try to hold the locked roll, with the integrator disabled
+        nav_roll_cd = acro_state.locked_roll_cd;
+        SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, rollController.get_servo_out(wrap_180_cd(nav_roll_cd - ahrs.roll_sensor),
                                                                                              speed_scaler,
                                                                                              true));
     } else {
