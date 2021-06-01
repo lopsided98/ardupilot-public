@@ -274,6 +274,9 @@ void Plane::stabilize_yaw(float speed_scaler)
             steering_control.ground_steering = false;
         }
     }
+    if (!steering_control.ground_steering) {
+        steer_state.locked_course = false;
+    }
 
 
     /*
