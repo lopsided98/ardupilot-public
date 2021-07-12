@@ -160,8 +160,8 @@ void Plane::stabilize_pitch(float speed_scaler)
         float pitch_error = -asinf(ahrs.get_rotation_body_to_ned().colz() * desired_attitude.colx());
         int32_t pitch_error_cd = degrees(pitch_error) * 100;
 
-        pitch_out = pitchController.get_servo_out(
-            pitch_error_cd, nav_roll_cd, speed_scaler, disable_integrator);
+        pitch_out = pitchController.get_servo_out(pitch_error_cd, speed_scaler,
+                                                  disable_integrator);
     }
     SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, pitch_out);
 }
