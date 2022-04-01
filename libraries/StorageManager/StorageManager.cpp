@@ -94,6 +94,9 @@ const StorageManager::StorageArea StorageManager::layout[STORAGE_NUM_AREAS] = {
     { StorageMission,  17664, 9842},
     { StorageParamBak, 27506, 5262},
 #endif
+#if STORAGE_NUM_AREAS >= 19
+    { StorageFence,    32768, 1368}, // 171 fence points
+#endif
 };
 #endif // STORAGE_NUM_AREAS == 1
 
