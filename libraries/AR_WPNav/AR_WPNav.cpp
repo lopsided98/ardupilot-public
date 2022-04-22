@@ -192,7 +192,7 @@ void AR_WPNav::update(float dt)
 bool AR_WPNav::set_desired_location(const struct Location& destination, float next_leg_bearing_cd)
 {
     // set origin to last destination if waypoint controller active
-    if (is_active() && _orig_and_dest_valid && _reached_destination) {
+    if (is_active() && _orig_and_dest_valid) {
         _origin = _destination;
     } else {
         // otherwise use reasonable stopping point
