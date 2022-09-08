@@ -264,6 +264,13 @@ const AP_Param::GroupInfo AP_TECS::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("PTCH_FF_K", 30, AP_TECS, _pitch_ff_k, 0.0),
 
+    // @Param: LAND_HGTTHR
+    // @DisplayName: Sink rate control during flare
+    // @Description: Enable throttle for sink rate control during landing
+    // @Values: 0:Disable,1:Enable
+    // @User: Advanced
+    AP_GROUPINFO("LAND_HGTTHR", 31, AP_TECS, _land_height_throttle, 0),
+
     AP_GROUPEND
 };
 
@@ -505,7 +512,9 @@ void AP_TECS::_update_height_demand(void)
             _hgt_rate_dem = - land_sink_rate_adj;
         }
         _land_hgt_dem += 0.1f * _hgt_rate_dem;
-        _hgt_dem_adj = _land_hgt_dem;
+        // HACK: set height error to zero while flaring
+        _hgt_dem_adj_last = _height;
+        _hgt_dem_adj = _height;
     } else {
         _hgt_rate_dem = (_hgt_dem_adj - _hgt_dem_adj_last) / 0.1f;
         _flare_counter = 0;
@@ -629,9 +638,19 @@ void AP_TECS::_update_throttle_with_airspeed(void)
     }
 
     // Calculate total energy error
-    _STE_error = constrain_float((_SPE_dem - _SPE_est), SPE_err_min, SPE_err_max) + _SKE_dem - _SKE_est;
-    float STEdot_dem = constrain_float((_SPEdot_dem + _SKEdot_dem), _STEdot_min, _STEdot_max);
-    float STEdot_error = STEdot_dem - _SPEdot - _SKEdot;
+    // HACK: only include potential energy error in calculation while flaring in
+    // height-throttle landing mode
+    _STE_error = constrain_float((_SPE_dem - _SPE_est), SPE_err_min, SPE_err_max);
+    float STEdot_dem = _SPEdot_dem;
+    if (!(_landing.is_flaring() && _land_height_throttle)) {
+        _STE_error += _SKE_dem - _SKE_est;
+        STEdot_dem += _SKEdot_dem;
+    }
+    STEdot_dem = constrain_float(STEdot_dem, _STEdot_min, _STEdot_max);
+    float STEdot_error = STEdot_dem - _SPEdot;
+    if (!(_landing.is_flaring() && _land_height_throttle)) {
+        STEdot_error -= _SKEdot;
+    }
 
     // Apply 0.5 second first order filter to STEdot_error
     // This is required to remove accelerometer noise from the  measurement
@@ -651,7 +670,13 @@ void AP_TECS::_update_throttle_with_airspeed(void)
 
         // Calculate feed-forward throttle
         float ff_throttle = 0;
-        float nomThr = aparm.throttle_cruise * 0.01f;
+        float nomThr;
+        // If landing and we have a non-negative TECS_LAND_THR param then use it
+        if (_flags.is_doing_auto_land && _landThrottle >= 0) {
+            nomThr = _landThrottle * 0.01f;
+        } else { // not landing or not using TECS_LAND_THR parameter
+            nomThr = aparm.throttle_cruise * 0.01f;
+        }
         const Matrix3f &rotMat = _ahrs.get_rotation_body_to_ned();
         // Use the demanded rate of change of total energy as the feed-forward demand, but add
         // additional component which scales with (1/cos(bank angle) - 1) to compensate for induced
@@ -678,7 +703,8 @@ void AP_TECS::_update_throttle_with_airspeed(void)
 
         // Calculate integrator state, constraining state
         // Set integrator to a max throttle value during climbout
-        _integTHR_state = _integTHR_state + (_STE_error * _get_i_gain()) * _DT * K_STE2Thr;
+        // HACK: include energy rate error in integrator
+        _integTHR_state = _integTHR_state + ((_STE_error + STEdot_error) * _get_i_gain()) * _DT * K_STE2Thr;
         if (_flight_stage == AP_Vehicle::FixedWing::FLIGHT_TAKEOFF || _flight_stage == AP_Vehicle::FixedWing::FLIGHT_ABORT_LAND) {
             if (!_flags.reached_speed_takeoff) {
                 // ensure we run at full throttle until we reach the target airspeed
@@ -1041,8 +1067,16 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
     }
 
     if (_landing.is_flaring()) {
-        // in flare use min pitch from LAND_PITCH_CD
-        _PITCHminf = MAX(_PITCHminf, _landing.get_pitch_cd() * 0.01f);
+        // HACK: gradually adjust pitch limit to arrive at flare angle
+        if (_flare_pitch_initial <= -90) {
+            _flare_pitch_initial = degrees(_pitch_dem);
+            _flare_pitch = _flare_pitch_initial;
+        }
+
+        const float flare_pitch_range = _landing.get_pitch_cd() * 0.01f - _flare_pitch_initial;
+        _flare_pitch += (flare_pitch_range / 2.0f /* sec */) * _DT;
+        _flare_pitch = MIN(_flare_pitch, _landing.get_pitch_cd() * 0.01f);
+        _PITCHminf = MAX(_flare_pitch, _PITCHminf);
 
         // and use max pitch from TECS_LAND_PMAX
         if (_land_pitch_max != 0) {
@@ -1052,7 +1086,12 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
 
         // and allow zero throttle
         _THRminf = 0;
-    } else if (_landing.is_on_approach() && (-_climb_rate) > _land_sink) {
+    } else {
+        _flare_pitch_initial = -90;
+    }
+    // HACK: don't start pitching up before flare. This just confuses the
+    // throttle control and makes it apply excessive throttle
+    /*if (_landing.is_on_approach() && (-_climb_rate) > _land_sink) {
         // constrain the pitch in landing as we get close to the flare
         // point. Use a simple linear limit from 15 meters after the
         // landing point
@@ -1071,9 +1110,11 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
 #endif
             _PITCHminf = MAX(_PITCHminf, pitch_limit_cd*0.01f);
         }
-    }
+    }*/
 
-    if (_landing.is_on_approach()) {
+    // HACK: this isn't needed because we don't adjust the min pitch based on
+    // time to flare
+    /*if (_landing.is_on_approach()) {
         // don't allow the lower bound of pitch to decrease, nor allow
         // it to increase rapidly. This prevents oscillation of pitch
         // demand while in landing approach based on rapidly changing
@@ -1086,7 +1127,7 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
         _PITCHminf = MIN(_PITCHminf, _land_pitch_min+delta_per_loop);
         _land_pitch_min = MAX(_land_pitch_min, _PITCHminf);
         _PITCHminf = MAX(_land_pitch_min, _PITCHminf);
-    }
+    }*/
 
     if (_landing.is_flaring()) {
         // ensure we don't violate the limits for flare pitch
@@ -1133,7 +1174,10 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
     // Note that caller can demand the use of
     // synthetic airspeed for one loop if needed. This is required
     // during QuadPlane transition when pitch is constrained
-    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once) {
+    // HACK: use airspeed sensor TECS calculation during descent rate controlled
+    // flare. Only potential energy error is used in this mode, so the lack of
+    // an airspeed sensor doesn't matter.
+    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once || ((_landing.is_on_approach() || _landing.is_flaring()) && _land_height_throttle)) {
         _update_throttle_with_airspeed();
         _use_synthetic_airspeed_once = false;
     } else {

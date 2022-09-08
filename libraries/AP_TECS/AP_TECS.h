@@ -193,6 +193,7 @@ private:
     AP_Int8  _pitch_max;
     AP_Int8  _pitch_min;
     AP_Int8  _land_pitch_max;
+    AP_Int8  _land_height_throttle;
     AP_Float _maxSinkRate_approach;
     AP_Int32 _options;
 
@@ -370,6 +371,12 @@ private:
     float _distance_beyond_land_wp;
 
     float _land_pitch_min = -90;
+
+    // initial pitch at start of flare
+    float _flare_pitch_initial = -90;
+
+    // pitch setpoint during transition into flare
+    float _flare_pitch;
 
     // need to reset on next loop
     bool _need_reset;
