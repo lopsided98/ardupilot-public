@@ -265,6 +265,12 @@ const AP_Param::GroupInfo AP_TECS::var_info[] = {
     AP_GROUPINFO("PTCH_FF_K", 30, AP_TECS, _pitch_ff_k, 0.0),
 
     // 31 previously used by TECS_LAND_PTRIM
+    // @Param: LAND_HGTTHR
+    // @DisplayName: Sink rate control during flare
+    // @Description: Enable throttle for sink rate control during landing
+    // @Values: 0:Disable,1:Enable
+    // @User: Advanced
+    AP_GROUPINFO("LAND_HGTTHR", 31, AP_TECS, _land_height_throttle, 0),
 
     // @Param: FLARE_HGT
     // @DisplayName: Flare holdoff height
@@ -585,8 +591,8 @@ void AP_TECS::_update_height_demand(void)
             _flare_initialised = true;
         }
 
-        // adjust the flare sink rate to increase/decrease as your travel further beyond the land wp
-        float land_sink_rate_adj = _land_sink + _land_sink_rate_change*_distance_beyond_land_wp;
+        // HACK: we don't want the sink rate to increase or we could stall
+        float land_sink_rate_adj = _land_sink;
 
         // bring it in linearly with height
         float p;
@@ -600,8 +606,8 @@ void AP_TECS::_update_height_demand(void)
         _flare_hgt_dem_ideal += _DT * _hgt_rate_dem; // the ideal height profile to follow
         _flare_hgt_dem_adj   += _DT * _hgt_rate_dem; // the demanded height profile that includes the pre-flare height tracking offset
 
-        // fade across to the ideal height profile
-        _hgt_dem = _flare_hgt_dem_adj * (1.0f - p) + _flare_hgt_dem_ideal * p;
+        // HACK: always zero height error during flare (only height rate control)
+        _hgt_dem = _hgt_afe;
 
         // correct for offset between height above ground and height above datum used by control loops
         _hgt_dem += (_hgt_afe - _height);
@@ -647,6 +653,8 @@ void AP_TECS::_update_energies(void)
 
     // Calculate specific energy rate demands and high pass filter demanded airspeed
     // rate of change to match the filtering applied to the measurement
+    // HACK: set potential energy error based on height rate demand
+    _SPEdot_dem = _hgt_rate_dem * GRAVITY_MSS;
     _SKEdot_dem = _TAS_state * (_TAS_rate_dem - _TAS_rate_dem_lpf);
 
     // Calculate specific energy
@@ -696,12 +704,23 @@ void AP_TECS::_update_throttle_with_airspeed(void)
     }
 
     // rate of change of potential energy is proportional to height error
-    _SPEdot_dem = (_SPE_dem - _SPE_est) / timeConstant();
+    // HACK: we want to base potential energy error on demanded height rate, as was done before the new TECS design
+    // _SPEdot_dem = (_SPE_dem - _SPE_est) / timeConstant();
 
     // Calculate total energy error
-    _STE_error = constrain_float((_SPE_dem - _SPE_est), SPE_err_min, SPE_err_max) + _SKE_dem - _SKE_est;
-    float STEdot_dem = constrain_float((_SPEdot_dem + _SKEdot_dem), _STEdot_min, _STEdot_max);
-    float STEdot_error = STEdot_dem - _SPEdot - _SKEdot;
+    // HACK: only include potential energy error in calculation while flaring in
+    // height-throttle landing mode
+    _STE_error = constrain_float((_SPE_dem - _SPE_est), SPE_err_min, SPE_err_max);
+    float STEdot_dem = _SPEdot_dem;
+    if (!(_landing.is_flaring() && _land_height_throttle)) {
+        _STE_error += _SKE_dem - _SKE_est;
+        STEdot_dem += _SKEdot_dem;
+    }
+    STEdot_dem = constrain_float(STEdot_dem, _STEdot_min, _STEdot_max);
+    float STEdot_error = STEdot_dem - _SPEdot;
+    if (!(_landing.is_flaring() && _land_height_throttle)) {
+        STEdot_error -= _SKEdot;
+    }
 
     // Apply 0.5 second first order filter to STEdot_error
     // This is required to remove accelerometer noise from the  measurement
@@ -721,7 +740,13 @@ void AP_TECS::_update_throttle_with_airspeed(void)
         const float K_STE2Thr = 1 / (timeConstant() * (_STEdot_max - _STEdot_min) / (_THRmaxf - _THRminf));
 
         // Calculate feed-forward throttle
-        const float nomThr = aparm.throttle_cruise * 0.01f;
+        float nomThr;
+        // If landing and we have a non-negative TECS_LAND_THR param then use it
+        if (_flags.is_doing_auto_land && _landThrottle >= 0) {
+            nomThr = _landThrottle * 0.01f;
+        } else { // not landing or not using TECS_LAND_THR parameter
+            nomThr = aparm.throttle_cruise * 0.01f;
+        }
         const Matrix3f &rotMat = _ahrs.get_rotation_body_to_ned();
         // Use the demanded rate of change of total energy as the feed-forward demand, but add
         // additional component which scales with (1/cos(bank angle) - 1) to compensate for induced
@@ -748,13 +773,17 @@ void AP_TECS::_update_throttle_with_airspeed(void)
 
         // Calculate integrator state, constraining state
         // Set integrator to a max throttle value during climbout
-        _integTHR_state = _integTHR_state + (_STE_error * _get_i_gain()) * _DT * K_STE2Thr;
+        // HACK: include energy rate error in integrator
+        _integTHR_state = _integTHR_state + ((_STE_error + STEdot_error) * _get_i_gain()) * _DT * K_STE2Thr;
         if (_flight_stage == AP_FixedWing::FlightStage::TAKEOFF || _flight_stage == AP_FixedWing::FlightStage::ABORT_LANDING) {
             if (!_flags.reached_speed_takeoff) {
                 // ensure we run at full throttle until we reach the target airspeed
                 _throttle_dem = MAX(_throttle_dem, _THRmaxf - _integTHR_state);
             }
             _integTHR_state = integ_max;
+        } else if (_flight_stage == AP_FixedWing::FlightStage::LAND && _landing.is_throttle_suppressed()) {
+            // HACK: don't allow integrator to wind up while throttle is suppressed during the start of flare
+            _integTHR_state = 0;
         } else {
             _integTHR_state = constrain_float(_integTHR_state, integ_min, integ_max);
         }
@@ -1232,7 +1261,8 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
         if (!_flare_initialised) {
             p = 0.0f;
         } else if (_hgt_at_start_of_flare > _flare_holdoff_hgt) {
-            p = constrain_float((_hgt_at_start_of_flare - _hgt_afe) / _hgt_at_start_of_flare, 0.0f, 1.0f);
+            // HACK (maybe): arrive at flare pitch at holdoff altitude
+            p = constrain_float((_hgt_at_start_of_flare - _hgt_afe) / (_hgt_at_start_of_flare - _flare_holdoff_hgt), 0.0f, 1.0f);
         } else {
             p = 1.0f;
         }
@@ -1313,7 +1343,10 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
     // Note that caller can demand the use of
     // synthetic airspeed for one loop if needed. This is required
     // during QuadPlane transition when pitch is constrained
-    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once) {
+    // HACK: use airspeed sensor TECS calculation during descent rate controlled
+    // flare. Only potential energy error is used in this mode, so the lack of
+    // an airspeed sensor doesn't matter.
+    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once || (_landing.is_flaring() && _land_height_throttle)) {
         _update_throttle_with_airspeed();
         _use_synthetic_airspeed_once = false;
         _using_airspeed_for_throttle = true;

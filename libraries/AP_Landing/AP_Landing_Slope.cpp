@@ -300,8 +300,9 @@ void AP_Landing::type_slope_setup_landing_glide_slope(const Location &prev_WP_lo
     float flare_distance = groundspeed * flare_time;
 
     // don't allow the flare before half way along the final leg
-    if (flare_distance > total_distance*0.5f) {
-        flare_distance = total_distance*0.5f;
+    // HACK: allow flare to be up to 90% of the total length
+    if (flare_distance > total_distance*0.9f) {
+        flare_distance = total_distance*0.9f;
     }
 
     // project a point 500 meters past the landing point, passing
@@ -434,5 +435,6 @@ void AP_Landing::type_slope_log(void) const
 
 bool AP_Landing::type_slope_is_throttle_suppressed(void) const
 {
-    return type_slope_stage == SlopeStage::FINAL;
+    // HACK: suppress throttle during flare until the nose comes up
+    return (type_slope_stage == SlopeStage::FINAL) && (tecs_Controller->get_pitch_demand() < 0);
 }
