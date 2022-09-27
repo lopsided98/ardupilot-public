@@ -378,6 +378,10 @@ private:
     // pitch setpoint during transition into flare
     float _flare_pitch;
 
+    // Currently transitioning into flare, throttle should be suppressed to
+    // minimize ballooning
+    bool _flare_transitioning;
+
     // need to reset on next loop
     bool _need_reset;
 

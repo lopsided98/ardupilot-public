@@ -1075,7 +1075,14 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
 
         const float flare_pitch_range = _landing.get_pitch_cd() * 0.01f - _flare_pitch_initial;
         _flare_pitch += (flare_pitch_range / 2.0f /* sec */) * _DT;
-        _flare_pitch = MIN(_flare_pitch, _landing.get_pitch_cd() * 0.01f);
+
+        if (_flare_pitch >= _landing.get_pitch_cd() * 0.01f) {
+            _flare_pitch = _landing.get_pitch_cd() * 0.01f;
+            // Reached target flare angle
+            _flare_transitioning = false;
+        } else {
+            _flare_transitioning = true;
+        }
         _PITCHminf = MAX(_flare_pitch, _PITCHminf);
 
         // and use max pitch from TECS_LAND_PMAX
@@ -1088,6 +1095,7 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
         _THRminf = 0;
     } else {
         _flare_pitch_initial = -90;
+        _flare_transitioning = false;
     }
     // HACK: don't start pitching up before flare. This just confuses the
     // throttle control and makes it apply excessive throttle
@@ -1177,7 +1185,7 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
     // HACK: use airspeed sensor TECS calculation during descent rate controlled
     // flare. Only potential energy error is used in this mode, so the lack of
     // an airspeed sensor doesn't matter.
-    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once || ((_landing.is_on_approach() || _landing.is_flaring()) && _land_height_throttle)) {
+    if (_ahrs.airspeed_sensor_enabled() || _use_synthetic_airspeed || _use_synthetic_airspeed_once || (_landing.is_flaring() && _land_height_throttle)) {
         _update_throttle_with_airspeed();
         _use_synthetic_airspeed_once = false;
     } else {
