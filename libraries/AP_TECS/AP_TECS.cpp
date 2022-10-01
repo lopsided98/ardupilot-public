@@ -1074,7 +1074,7 @@ void AP_TECS::update_pitch_throttle(int32_t hgt_dem_cm,
         }
 
         const float flare_pitch_range = _landing.get_pitch_cd() * 0.01f - _flare_pitch_initial;
-        _flare_pitch += (flare_pitch_range / 2.0f /* sec */) * _DT;
+        _flare_pitch += (flare_pitch_range / _landing.get_flare_slew_time() /* sec */) * _DT;
 
         if (_flare_pitch >= _landing.get_pitch_cd() * 0.01f) {
             _flare_pitch = _landing.get_pitch_cd() * 0.01f;

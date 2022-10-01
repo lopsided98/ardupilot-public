@@ -70,6 +70,15 @@ const AP_Param::GroupInfo AP_Landing::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("FLARE_SEC", 5, AP_Landing, flare_sec, 2.0f),
 
+    // @Param: FLARE_SLEW
+    // @DisplayName: Landing flare slew time
+    // @Description: Time to slew the minimum pitch from the normal value to the flare pitch. The throttle is suppressed during the slewing period.
+    // @Units: s
+    // @Range: 0 5
+    // @Increment: 0.1
+    // @User: Advanced
+    AP_GROUPINFO("FLARE_SLEW", 17, AP_Landing, flare_slew, 2.0f),
+
     // @Param: PF_ALT
     // @DisplayName: Landing pre-flare altitude
     // @Description: Altitude to trigger pre-flare flight stage where LAND_PF_ARSPD controls airspeed. The pre-flare flight stage trigger works just like LAND_FLARE_ALT but higher. Disabled when LAND_PF_ARSPD is 0.
