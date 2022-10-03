@@ -867,6 +867,8 @@ void AP_TECS::_update_pitch(void)
     logging.SKE_error = _SKE_dem - _SKE_est;
     logging.SPE_error = _SPE_dem - _SPE_est;
 
+    float gainInv = (_TAS_state * timeConstant() * GRAVITY_MSS);
+
     // Calculate integrator state, constraining input if pitch limits are exceeded
     float integSEB_input = SEB_error * _get_i_gain();
     if (_pitch_dem > _PITCHmaxf) {
@@ -874,7 +876,7 @@ void AP_TECS::_update_pitch(void)
     } else if (_pitch_dem < _PITCHminf) {
         integSEB_input = MAX(integSEB_input, _PITCHminf - _pitch_dem);
     }
-    float integSEB_delta = integSEB_input * _DT;
+    float integSEB_delta = integSEB_input * _DT / gainInv;
 
 #if 0
     if (_landing.is_flaring() && fabsf(_climb_rate) > 0.2f) {
@@ -892,7 +894,6 @@ void AP_TECS::_update_pitch(void)
     // demand equal to the minimum value (which is )set by the mission plan during this mode). Otherwise the
     // integrator has to catch up before the nose can be raised to reduce speed during climbout.
     // During flare a different damping gain is used
-    float gainInv = (_TAS_state * timeConstant() * GRAVITY_MSS);
     float temp = SEB_error + 0.5*SEBdot_dem * timeConstant();
 
     float pitch_damp = _ptchDamp;
@@ -906,8 +907,8 @@ void AP_TECS::_update_pitch(void)
     if (_flight_stage == AP_Vehicle::FixedWing::FLIGHT_TAKEOFF || _flight_stage == AP_Vehicle::FixedWing::FLIGHT_ABORT_LAND) {
         temp += _PITCHminf * gainInv;
     }
-    float integSEB_min = (gainInv * (_PITCHminf - 0.0783f)) - temp;
-    float integSEB_max = (gainInv * (_PITCHmaxf + 0.0783f)) - temp;
+    float integSEB_min = (_PITCHminf - 0.0783f) - temp;
+    float integSEB_max = (_PITCHmaxf + 0.0783f) - temp;
     float integSEB_range = integSEB_max - integSEB_min;
 
     logging.SEB_delta = integSEB_delta;
@@ -930,7 +931,7 @@ void AP_TECS::_update_pitch(void)
     _integSEB_state = constrain_float(_integSEB_state + integSEB_delta, integSEB_min, integSEB_max);
 
     // Calculate pitch demand from specific energy balance signals
-    _pitch_dem_unc = (temp + _integSEB_state) / gainInv;
+    _pitch_dem_unc = temp / gainInv + _integSEB_state;
 
 
     // Add a feedforward term from demanded airspeed to pitch.
