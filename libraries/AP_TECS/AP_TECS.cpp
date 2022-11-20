@@ -801,6 +801,12 @@ void AP_TECS::_update_throttle_without_airspeed(int16_t throttle_nudge)
     float cosPhi = sqrtf((rotMat.a.y*rotMat.a.y) + (rotMat.b.y*rotMat.b.y));
     float STEdot_dem = _rollComp * (1.0f/constrain_float(cosPhi * cosPhi, 0.1f, 1.0f) - 1.0f);
     _throttle_dem = _throttle_dem + STEdot_dem / (_STEdot_max - _STEdot_min) * (_THRmaxf - _THRminf);
+
+    // HACK: reset throttle clipping. Normally, the throttle clipping flags are
+    // only set by the airspeed throttle controller. We only use that controller
+    // for landing flare, so it is possible for the throttle clipping flags to
+    // get stuck on at the end of the landing.
+    _thr_clip_status = ThrClipStatus::NONE;
 }
 
 void AP_TECS::_detect_bad_descent(void)
