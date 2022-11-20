@@ -923,6 +923,10 @@ void AP_TECS::_update_throttle_without_airspeed(int16_t throttle_nudge)
     // for landing flare, so it is possible for the throttle clipping flags to
     // get stuck on at the end of the landing.
     _thr_clip_status = clipStatus::NONE;
+    // HACK: Reset throttle integrator. This is another variable that is
+    // normally only used with an airspeed sensor, and might not get reset when
+    // switching between the two controllers.
+    _integTHR_state = 0;
 }
 
 void AP_TECS::_detect_bad_descent(void)
