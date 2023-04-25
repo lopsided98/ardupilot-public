@@ -457,7 +457,8 @@ int32_t AP_Mission::get_next_ground_course_cd(int32_t default_angle)
     }
     // special handling for nav commands with no target location
     if (cmd.id == MAV_CMD_NAV_GUIDED_ENABLE ||
-        cmd.id == MAV_CMD_NAV_DELAY) {
+        cmd.id == MAV_CMD_NAV_DELAY ||
+        cmd.id == MAV_CMD_NAV_LOITER_TO_ALT) {
         return default_angle;
     }
     if (cmd.id == MAV_CMD_NAV_SET_YAW_SPEED) {

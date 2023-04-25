@@ -427,8 +427,9 @@ void Plane::setup_turn_angle(void)
 {
     int32_t next_ground_course_cd = mission.get_next_ground_course_cd(-1);
     if (next_ground_course_cd == -1) {
-        // the mission library can't determine a turn angle, assume 90 degrees
-        auto_state.next_turn_angle = 90.0f;
+        // the mission library can't determine a turn angle, assume 0 degrees to
+        // prevent ending early
+        auto_state.next_turn_angle = 0.0f;
     } else {
         // get the heading of the current leg
         int32_t ground_course_cd = prev_WP_loc.get_bearing_to(next_WP_loc);
