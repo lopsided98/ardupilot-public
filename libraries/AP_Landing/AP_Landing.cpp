@@ -660,7 +660,7 @@ void AP_Landing::Log(void) const
 /*
  * returns true when throttle should be suppressed while landing
  */
-bool AP_Landing::is_throttle_suppressed(void) const
+bool AP_Landing::is_throttle_suppressed(const bool is_flying) const
 {
     if (!flags.in_progress) {
         return false;
@@ -668,7 +668,7 @@ bool AP_Landing::is_throttle_suppressed(void) const
 
     switch (type) {
     case TYPE_STANDARD_GLIDE_SLOPE:
-        return type_slope_is_throttle_suppressed();
+        return type_slope_is_throttle_suppressed(is_flying);
 #if HAL_LANDING_DEEPSTALL_ENABLED
     case TYPE_DEEPSTALL:
         return deepstall.is_throttle_suppressed();

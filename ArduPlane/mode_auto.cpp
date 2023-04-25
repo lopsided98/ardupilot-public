@@ -91,7 +91,7 @@ void ModeAuto::update()
         // allow landing to restrict the roll limits
         plane.nav_roll_cd = plane.landing.constrain_roll(plane.nav_roll_cd, plane.g.level_roll_limit*100UL);
 
-        if (plane.landing.is_throttle_suppressed()) {
+        if (plane.landing.is_throttle_suppressed(plane.is_flying())) {
             // if landing is considered complete throttle is never allowed, regardless of landing type
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0.0);
         } else {

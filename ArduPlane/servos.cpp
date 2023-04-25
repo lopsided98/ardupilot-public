@@ -81,7 +81,7 @@ bool Plane::suppress_throttle(void)
     }
 #endif
 
-    if (landing.is_throttle_suppressed()) {
+    if (landing.is_throttle_suppressed(is_flying())) {
         return true;
     }
 

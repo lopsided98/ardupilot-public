@@ -420,7 +420,7 @@ void AP_Landing::type_slope_log(void) const
                                             (double)height_flare_log);
 }
 
-bool AP_Landing::type_slope_is_throttle_suppressed(void) const
+bool AP_Landing::type_slope_is_throttle_suppressed(const bool is_flying) const
 {
-    return false;
+    return (type_slope_stage == SLOPE_STAGE_FINAL) && !is_flying;
 }

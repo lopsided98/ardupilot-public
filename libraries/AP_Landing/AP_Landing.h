@@ -77,7 +77,7 @@ public:
     bool is_flaring(void) const;
     bool is_on_approach(void) const;
     bool is_ground_steering_allowed(void) const;
-    bool is_throttle_suppressed(void) const;
+    bool is_throttle_suppressed(const bool is_flying) const;
     bool is_flying_forward(void) const;
     bool use_thr_min_during_flare(void) const; //defaults to false, but _options bit zero enables it.
     void handle_flight_stage_change(const bool _in_landing_stage);
@@ -202,5 +202,5 @@ private:
     bool type_slope_is_flaring(void) const;
     bool type_slope_is_on_approach(void) const;
     bool type_slope_is_expecting_impact(void) const;
-    bool type_slope_is_throttle_suppressed(void) const;
+    bool type_slope_is_throttle_suppressed(const bool is_flying) const;
 };
