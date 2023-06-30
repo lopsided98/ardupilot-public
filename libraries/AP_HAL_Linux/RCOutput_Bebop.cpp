@@ -377,7 +377,9 @@ void RCOutput_Bebop::enable_ch(uint8_t ch)
 
 void RCOutput_Bebop::disable_ch(uint8_t ch)
 {
-    _stop_prop();
+    if (ch < _n_motors) {
+        _stop_prop();
+    }
 }
 
 void RCOutput_Bebop::write(uint8_t ch, uint16_t period_us)
