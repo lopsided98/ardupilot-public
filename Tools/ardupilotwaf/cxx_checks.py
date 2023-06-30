@@ -231,10 +231,6 @@ def check_lttng(cfg, env):
 
 @conf
 def check_libiio(cfg, env):
-    if cfg.env.STATIC_LINKING:
-        # libiio depends on libdl which means it can't be used in a static build
-        cfg.msg("Checking for 'libiio':", 'disabled for static build', color='YELLOW')
-        return False
     if cfg.options.disable_libiio:
         cfg.msg("Checking for 'libiio':", 'disabled', color='YELLOW')
         return False
