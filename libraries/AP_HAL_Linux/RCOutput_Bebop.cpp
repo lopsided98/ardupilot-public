@@ -158,12 +158,14 @@ bool RCOutput_Bebop::_read_obs_data(BebopBLDC_ObsData &obs)
         uint8_t     checksum;
     } data {};
 
-    {
-        WITH_SEMAPHORE(_dev->get_semaphore());
-        if (!_dev->read_registers(BebopBLDC_Command::GET_OBS_DATA, reinterpret_cast<uint8_t*>(&data), sizeof(data))) {
-            return false;
-        }
+    if (!_dev->get_semaphore()->take_nonblocking()) {
+        return false;
     }
+    if (!_dev->read_registers(BebopBLDC_Command::GET_OBS_DATA, reinterpret_cast<uint8_t*>(&data), sizeof(data))) {
+        _dev->get_semaphore()->give();
+        return false;
+    }
+    _dev->get_semaphore()->give();
 
     if (data.checksum != _checksum(reinterpret_cast<uint8_t*>(&data), sizeof(data) - 1)) {
         return false;
@@ -254,10 +256,34 @@ void RCOutput_Bebop::play_note(uint8_t pwm,
     _dev->transfer(reinterpret_cast<uint8_t*>(&msg), sizeof(msg), nullptr, 0);
 }
 
-void RCOutput_Bebop::update() {
-#if HAL_WITH_ESC_TELEM
-    BebopBLDC_ObsData obs = get_obs_data();
+void RCOutput_Bebop::update()
+{
+    BebopBLDC_ObsData obs;
+    if (!_read_obs_data(obs)) {
+        return;
+    }
+    _obs = obs;
 
+    // sync our state from status. This makes us more robust to i2c errors
+    switch (obs.status) {
+    case BebopBLDC_Status::INIT:
+    case BebopBLDC_Status::IDLE:
+    case BebopBLDC_Status::STOPPING:
+    case BebopBLDC_Status::CRITICAL:
+        _state.store(State::STOPPED, std::memory_order_relaxed);
+        break;
+    case BebopBLDC_Status::RAMPING:
+    case BebopBLDC_Status::SPINNING_1:
+    case BebopBLDC_Status::SPINNING_2:
+        _state.store(State::STARTED, std::memory_order_relaxed);
+        break;
+    }
+
+    if (obs.error != BebopBLDC_Error::NONE) {
+        _state.store(State::ERROR, std::memory_order_relaxed);
+    }
+
+#if HAL_WITH_ESC_TELEM
     // Same telemetry for all motors
     TelemetryData t {
         .temperature_cdeg = static_cast<int16_t>(obs.temperature * 100)
@@ -269,14 +295,6 @@ void RCOutput_Bebop::update() {
         update_telem_data(channel, t, AP_ESC_Telem_Backend::TelemetryType::TEMPERATURE);
     }
 #endif // HAL_WITH_ESC_TELEM
-}
-
-BebopBLDC_ObsData RCOutput_Bebop::get_obs_data() {
-	BebopBLDC_ObsData obs;
-    pthread_mutex_lock(&_mutex);
-    obs = _obs;
-    pthread_mutex_unlock(&_mutex);
-	return obs;
 }
 
 uint16_t RCOutput_Bebop::_period_us_to_rpm(uint16_t period_us)
@@ -533,32 +551,6 @@ void RCOutput_Bebop::_run_rcout()
                 _start_prop();
             }
             _set_ref_speed(_rpm);
-        }
-
-        BebopBLDC_ObsData obs;
-        if (_read_obs_data(obs)) {
-            // sync our state from status. This makes us more robust to i2c errors
-            switch (obs.status) {
-            case BebopBLDC_Status::INIT:
-            case BebopBLDC_Status::IDLE:
-            case BebopBLDC_Status::STOPPING:
-            case BebopBLDC_Status::CRITICAL:
-                _state.store(State::STOPPED, std::memory_order_relaxed);
-                break;
-            case BebopBLDC_Status::RAMPING:
-            case BebopBLDC_Status::SPINNING_1:
-            case BebopBLDC_Status::SPINNING_2:
-                _state.store(State::STARTED, std::memory_order_relaxed);
-                break;
-            }
-
-            if (obs.error != BebopBLDC_Error::NONE) {
-                _state.store(State::ERROR, std::memory_order_relaxed);
-            }
-
-            pthread_mutex_lock(&_mutex);
-            _obs = obs;
-            pthread_mutex_unlock(&_mutex);
         }
     }
 }

@@ -85,7 +85,7 @@ public:
     void     read(uint16_t* period_us, uint8_t len) override;
     void     play_note(uint8_t pwm, uint16_t period_us, uint16_t duration_ms);
     void     update();
-    BebopBLDC_ObsData get_obs_data();
+    const BebopBLDC_ObsData& get_obs_data() const { return _obs; };
 
 private:
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;

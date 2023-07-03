@@ -159,7 +159,6 @@ float AP_BattMonitor_Bebop::_compute_battery_percentage(float vbat)
 void AP_BattMonitor_Bebop::read(void)
 {
     uint32_t tnow;
-    BebopBLDC_ObsData data;
     float capacity, remaining, vbat, vbat_raw;
 
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BEBOP
@@ -169,7 +168,7 @@ void AP_BattMonitor_Bebop::read(void)
 #endif
     tnow = AP_HAL::micros();
 
-    data = rcout->get_obs_data();
+    const BebopBLDC_ObsData &data = rcout->get_obs_data();
 
     /* get battery voltage observed by cypress */
     vbat_raw = (float)data.batt_mv * 0.001f;
