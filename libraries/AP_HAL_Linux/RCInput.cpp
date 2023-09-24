@@ -32,10 +32,20 @@ RCInput::RCInput()
 
 void RCInput::init()
 {
+    AP::RC().init();
 }
 
 bool RCInput::new_input()
 {
+    if (!using_rc_protocol) {
+        if (AP::RC().new_input()) {
+            using_rc_protocol = true;
+        }
+    }
+    if (using_rc_protocol) {
+        return AP::RC().new_input();
+    }
+
     bool ret = rc_input_count != last_rc_input_count;
     if (ret) {
         last_rc_input_count.store(rc_input_count);
@@ -45,6 +55,10 @@ bool RCInput::new_input()
 
 uint8_t RCInput::num_channels()
 {
+    if (using_rc_protocol) {
+        return AP::RC().num_channels();
+    }
+
     return _num_channels;
 }
 
@@ -55,6 +69,10 @@ void RCInput::set_num_channels(uint8_t num)
 
 uint16_t RCInput::read(uint8_t ch)
 {
+    if (using_rc_protocol) {
+        return AP::RC().read(ch);
+    }
+
     if (ch >= _num_channels) {
         return 0;
     }

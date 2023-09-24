@@ -52,6 +52,8 @@ protected:
     void _process_rc_pulse(uint16_t width_s0, uint16_t width_s1);
     void _update_periods(uint16_t *periods, uint8_t len);
 
+    bool using_rc_protocol;
+
     std::atomic<unsigned int> rc_input_count;
     std::atomic<unsigned int> last_rc_input_count;
 

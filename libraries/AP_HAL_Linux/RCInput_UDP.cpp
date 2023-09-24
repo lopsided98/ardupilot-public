@@ -18,6 +18,8 @@ RCInput_UDP::RCInput_UDP() :
 
 void RCInput_UDP::init()
 {
+    RCInput::init();
+
     _port = RCINPUT_UDP_DEF_PORT;
     if(!_socket.bind("0.0.0.0", _port)) {
         hal.console->printf("failed to bind UDP socket\n");
