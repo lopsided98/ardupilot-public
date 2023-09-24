@@ -338,7 +338,7 @@ bool UARTDriver::_write_pending_bytes(void)
     uint16_t n = available_bytes;
 
 #if HAL_GCS_ENABLED
-    if (_packetise && n > 0) {
+    if (_packetise && n > 0 && _console) {
         // send on MAVLink packet boundaries if possible
         n = mavlink_packetise(_writebuf, n);
     }
