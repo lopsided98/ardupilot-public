@@ -18,6 +18,8 @@
 
 #if AP_RANGEFINDER_BEBOP_ENABLED
 
+#include "AP_RangeFinder_Backend.h"
+
 #include <AP_HAL_Linux/Thread.h>
 
 /*
