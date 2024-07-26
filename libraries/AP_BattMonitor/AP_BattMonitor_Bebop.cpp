@@ -180,13 +180,13 @@ void AP_BattMonitor_Bebop::read(void)
     vbat_raw = (float)data.batt_mv * 0.001f;
 
     /* do not compute battery status on ramping or braking transition */
-    if (data.status == BEBOP_BLDC_STATUS_RAMPING ||
-        data.status == BEBOP_BLDC_STATUS_STOPPING)
+    if (data.status == BebopBLDC_Status::RAMPING ||
+        data.status == BebopBLDC_Status::STOPPING)
         return;
 
     /* if motors are spinning compute polynomial compensation */
-    if (data.status == BEBOP_BLDC_STATUS_SPINNING_1 ||
-        data.status == BEBOP_BLDC_STATUS_SPINNING_2) {
+    if (data.status == BebopBLDC_Status::SPINNING_1 ||
+        data.status == BebopBLDC_Status::SPINNING_2) {
         vbat = _compute_compensation(data.rpm, vbat_raw);
     /* otherwise compute constant compensation */
     } else {

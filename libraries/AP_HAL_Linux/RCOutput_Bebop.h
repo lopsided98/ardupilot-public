@@ -3,61 +3,69 @@
 #include "AP_HAL_Linux.h"
 #include <AP_HAL/I2CDevice.h>
 
-struct bldc_info;
+namespace Linux
+{
 
-namespace Linux {
-
-enum bebop_bldc_motor {
-    BEBOP_BLDC_MOTOR_1 = 0,
+enum class BebopBLDC_Motor: uint8_t {
+    MOTOR_1,
 #if CONFIG_HAL_BOARD_SUBTYPE != HAL_BOARD_SUBTYPE_LINUX_DISCO
-    BEBOP_BLDC_MOTOR_2,
-    BEBOP_BLDC_MOTOR_3,
-    BEBOP_BLDC_MOTOR_4,
+    MOTOR_2,
+    MOTOR_3,
+    MOTOR_4,
 #endif
-    BEBOP_BLDC_MOTORS_NUM,
+    MOTORS_NUM,
 };
 
-enum bebop_bldc_sound {
-    BEBOP_BLDC_SOUND_NONE = 0,
-    BEBOP_BLDC_SOUND_SHORT_BEEP,
-    BEBOP_BLDC_SOUND_BOOT_BEEP,
-    BEBOP_BLDC_SOUND_BEBOP,
+const uint8_t BEBOP_BLDC_MOTORS_NUM = static_cast<uint8_t>(BebopBLDC_Motor::MOTORS_NUM);
+
+struct BebopBLDC_Info;
+enum class BebopBLDC_Sound: uint8_t;
+
+// Values of bottom nibble of the obs data status byte
+enum class BebopBLDC_Status: uint8_t {
+    INIT = 0,
+    IDLE = 1,
+    RAMPING = 2,
+    SPINNING_1 = 3,
+    SPINNING_2 = 4,
+    STOPPING = 5,
+    CRITICAL = 6,
 };
 
-/* description of the bldc status */
-#define BEBOP_BLDC_STATUS_INIT          0
-#define BEBOP_BLDC_STATUS_IDLE          1
-#define BEBOP_BLDC_STATUS_RAMPING       2
-#define BEBOP_BLDC_STATUS_SPINNING_1    3
-#define BEBOP_BLDC_STATUS_SPINNING_2    4
-#define BEBOP_BLDC_STATUS_STOPPING      5
-#define BEBOP_BLDC_STATUS_CRITICAL      6
+// Description of the BLDC errno
+enum class BebopBLDC_Error : uint8_t {
+    NONE = 0,
+    EEPROM = 1,
+    MOTOR_STALLED = 2,
+    PROP_SECU = 3,
+    COM_LOST = 4,
+    BATT_LEVEL = 9,
+    LIPO = 10,
+    MOTOR_HW = 11
+};
 
-/* description of the bldc errno */
-#define BEBOP_BLDC_ERRNO_EEPROM         1
-#define BEBOP_BLDC_ERRNO_MOTOR_STALLED  2
-#define BEBOP_BLDC_ERRNO_PROP_SECU      3
-#define BEBOP_BLDC_ERRNO_COM_LOST       4
-#define BEBOP_BLDC_ERRNO_BATT_LEVEL     9
-#define BEBOP_BLDC_ERRNO_LIPO           10
-#define BEBOP_BLDC_ERRNO_MOTOR_HW       11
-
-class BebopBLDC_ObsData {
-public:
+struct BebopBLDC_ObsData {
     uint16_t rpm[BEBOP_BLDC_MOTORS_NUM];
     uint8_t rpm_saturated[BEBOP_BLDC_MOTORS_NUM];
     uint16_t batt_mv;
-    uint8_t status;
-    uint8_t error;
+    BebopBLDC_Status status;
+    BebopBLDC_Error error;
     uint8_t motors_err;
     uint8_t temperature;
 };
 
-class RCOutput_Bebop : public AP_HAL::RCOutput {
+class RCOutput_Bebop : public AP_HAL::RCOutput
+{
 public:
+    enum class State {
+        STARTED,
+        STOPPED,
+    };
+
     RCOutput_Bebop(AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
 
-    static RCOutput_Bebop *from(AP_HAL::RCOutput *rcout) {
+    static RCOutput_Bebop *from(AP_HAL::RCOutput *rcout)
+    {
         return static_cast<RCOutput_Bebop*>(rcout);
     }
 
@@ -82,19 +90,19 @@ private:
     uint16_t _frequency;
     uint16_t _min_pwm;
     uint16_t _max_pwm;
-    uint8_t _n_motors=4;
-    uint8_t  _state;
-    bool     _corking = false;
+    uint8_t  _n_motors{4};
+    State    _state{State::STOPPED};
+    bool     _corking{false};
     uint16_t _max_rpm;
 
     uint8_t _checksum(uint8_t *data, unsigned int len);
     void _start_prop();
     void _toggle_gpio(uint8_t mask);
     void _set_ref_speed(uint16_t rpm[BEBOP_BLDC_MOTORS_NUM]);
-    bool _get_info(struct bldc_info *info);
+    bool _get_info(BebopBLDC_Info &info);
     void _stop_prop();
     void _clear_error();
-    void _play_sound(uint8_t sound);
+    void _play_sound(BebopBLDC_Sound sound);
     uint16_t _period_us_to_rpm(uint16_t period_us);
 
     /* thread related members */
