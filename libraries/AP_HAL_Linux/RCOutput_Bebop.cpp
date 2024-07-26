@@ -1,4 +1,5 @@
 #include <AP_HAL/AP_HAL.h>
+#include <atomic>
 
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BEBOP || CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
 #include "RCOutput_Bebop.h"
@@ -104,7 +105,7 @@ void RCOutput_Bebop::_start_prop()
 
     WITH_SEMAPHORE(_dev->get_semaphore());
     if (_dev->transfer(&data, sizeof(data), nullptr, 0)) {
-        _state = State::STARTED;
+        _state.store(State::STARTED, std::memory_order_relaxed);
     }
 }
 
@@ -139,7 +140,7 @@ bool RCOutput_Bebop::_get_info(BebopBLDC_Info &info)
     return true;
 }
 
-int RCOutput_Bebop::read_obs_data(BebopBLDC_ObsData &obs)
+bool RCOutput_Bebop::_read_obs_data(BebopBLDC_ObsData &obs)
 {
     // The structure returned is different on the Disco from the Bebop
     struct PACKED {
@@ -160,12 +161,12 @@ int RCOutput_Bebop::read_obs_data(BebopBLDC_ObsData &obs)
     {
         WITH_SEMAPHORE(_dev->get_semaphore());
         if (!_dev->read_registers(BebopBLDC_Command::GET_OBS_DATA, reinterpret_cast<uint8_t*>(&data), sizeof(data))) {
-            return -EIO;
+            return false;
         }
     }
 
     if (data.checksum != _checksum(reinterpret_cast<uint8_t*>(&data), sizeof(data) - 1)) {
-        return -EBUSY;
+        return false;
     }
 
     /* fill obs class */
@@ -186,28 +187,13 @@ int RCOutput_Bebop::read_obs_data(BebopBLDC_ObsData &obs)
 #endif
     }
 
-    // sync our state from status. This makes us more robust to i2c errors
-    BebopBLDC_Status status = static_cast<BebopBLDC_Status>(data.status & 0x0F);
-    switch (status) {
-    case BebopBLDC_Status::IDLE:
-    case BebopBLDC_Status::STOPPING:
-        _state = State::STOPPED;
-        break;
-    case BebopBLDC_Status::RAMPING:
-    case BebopBLDC_Status::SPINNING_2:
-        _state = State::STARTED;
-        break;
-    default:
-        break;
-    }
-
     obs.batt_mv = be16toh(data.batt_mv);
-    obs.status = status;
+    obs.status = static_cast<BebopBLDC_Status>(data.status & 0x0F);
     obs.error = static_cast<BebopBLDC_Error>(data.error);
     obs.motors_err = data.motors_err;
     obs.temperature = data.temp;
 
-    return 0;
+    return true;
 }
 
 void RCOutput_Bebop::_toggle_gpio(uint8_t mask)
@@ -268,6 +254,31 @@ void RCOutput_Bebop::play_note(uint8_t pwm,
     _dev->transfer(reinterpret_cast<uint8_t*>(&msg), sizeof(msg), nullptr, 0);
 }
 
+void RCOutput_Bebop::update() {
+#if HAL_WITH_ESC_TELEM
+    BebopBLDC_ObsData obs = get_obs_data();
+
+    // Same telemetry for all motors
+    TelemetryData t {
+        .temperature_cdeg = static_cast<int16_t>(obs.temperature * 100)
+        // Voltage is reported through the battery monitor instead
+    };
+    for (uint8_t i = 0; i < _n_motors; ++i) {
+        uint8_t channel = _index_to_channel[i];
+        update_rpm(channel, obs.rpm[i]);
+        update_telem_data(channel, t, AP_ESC_Telem_Backend::TelemetryType::TEMPERATURE);
+    }
+#endif // HAL_WITH_ESC_TELEM
+}
+
+BebopBLDC_ObsData RCOutput_Bebop::get_obs_data() {
+	BebopBLDC_ObsData obs;
+    pthread_mutex_lock(&_mutex);
+    obs = _obs;
+    pthread_mutex_unlock(&_mutex);
+	return obs;
+}
+
 uint16_t RCOutput_Bebop::_period_us_to_rpm(uint16_t period_us)
 {
     period_us = constrain_int16(period_us, _min_pwm, _max_pwm);
@@ -281,9 +292,69 @@ uint16_t RCOutput_Bebop::_period_us_to_rpm(uint16_t period_us)
 void RCOutput_Bebop::init()
 {
     int ret=0;
+    BebopBLDC_Info info;
+    int hw_version;
     struct sched_param param = { .sched_priority = RCOUT_BEBOP_RTPRIO };
     pthread_attr_t attr;
     pthread_condattr_t cond_attr;
+
+    if (!_get_info(info)) {
+        AP_HAL::panic("RCOutput_Bebop: failed to get BLDC info");
+    }
+
+    // remember _n_motors for _read_obs_data()
+    _n_motors = info.n_motors;
+
+    // If too many motors are reported, panic to prevent out of bounds accesses
+    if (_n_motors > BEBOP_BLDC_MOTORS_NUM) {
+        AP_HAL::panic("RCOutput_Bebop: too many motors");
+    }
+
+#if CONFIG_HAL_BOARD_SUBTYPE != HAL_BOARD_SUBTYPE_LINUX_DISCO
+    BebopBLDC_Motor bebop_bldc_right_front, bebop_bldc_left_front,
+                    bebop_bldc_left_back, bebop_bldc_right_back;
+    /* Set motor order depending on BLDC version.On bebop 1 with version 1
+     * keep current order. The order changes from version 2 on bebop 1 and
+     * remains the same as this for bebop 2
+     */
+    if (info.version_maj == 1) {
+        bebop_bldc_right_front = BebopBLDC_Motor::MOTOR_1;
+        bebop_bldc_left_front  = BebopBLDC_Motor::MOTOR_2;
+        bebop_bldc_left_back   = BebopBLDC_Motor::MOTOR_3;
+        bebop_bldc_right_back  = BebopBLDC_Motor::MOTOR_4;
+    } else {
+        bebop_bldc_right_front = BebopBLDC_Motor::MOTOR_2;
+        bebop_bldc_left_front  = BebopBLDC_Motor::MOTOR_1;
+        bebop_bldc_left_back   = BebopBLDC_Motor::MOTOR_4;
+        bebop_bldc_right_back  = BebopBLDC_Motor::MOTOR_3;
+    }
+
+    _channel_to_index[0] = bebop_bldc_right_front;
+    _channel_to_index[1] = bebop_bldc_left_back;
+    _channel_to_index[2] = bebop_bldc_left_front;
+    _channel_to_index[3] = bebop_bldc_right_back;
+    // Inverse mapping for telemetry
+    for (uint8_t i = 0; i < BEBOP_BLDC_MOTORS_NUM; ++i) {
+        _index_to_channel[static_cast<size_t>(_channel_to_index[i])] = i;
+    }
+#endif
+
+    hw_version = Util::from(hal.util)->get_hw_arm32();
+    if (hw_version == UTIL_HARDWARE_BEBOP) {
+        _max_rpm = BEBOP_BLDC_MAX_RPM_1;
+    } else if (hw_version == UTIL_HARDWARE_BEBOP2) {
+        _max_rpm = BEBOP_BLDC_MAX_RPM_2;
+    } else if (hw_version == UTIL_HARDWARE_DISCO) {
+        _max_rpm = BEBOP_BLDC_MAX_RPM_DISCO;
+    } else if (hw_version < 0) {
+        AP_HAL::panic("RCOutput_Bebop: failed to get hw version %s", strerror(hw_version));
+    } else {
+        AP_HAL::panic("RCOutput_Bebop: unsupported hw version %d", hw_version);
+    }
+    printf("Bebop: vers %u/%u type %u nmotors %u n_flights %u last_flight_time %u total_flight_time %u maxrpm %u\n",
+           info.version_maj, info.version_min, info.type, info.n_motors,
+		   be16toh(info.n_flights), be16toh(info.last_flight_time),
+		   be32toh(info.total_flight_time), _max_rpm);
 
     /* Initialize thread, cond, and mutex */
     ret = pthread_mutex_init(&_mutex, nullptr);
@@ -371,6 +442,8 @@ void RCOutput_Bebop::cork()
 
 void RCOutput_Bebop::push()
 {
+    update();
+
     if (!_corking) {
         return;
     }
@@ -413,58 +486,6 @@ void RCOutput_Bebop::_run_rcout()
     uint8_t i;
     int ret;
     struct timespec ts;
-    BebopBLDC_Info info;
-    BebopBLDC_Motor bebop_bldc_channels[BEBOP_BLDC_MOTORS_NUM] {};
-    int hw_version;
-
-    if (!_get_info(info)) {
-        AP_HAL::panic("RCOutput_Bebop: failed to get BLDC info");
-    }
-
-    // remember _n_motors for read_obs_data()
-    _n_motors = info.n_motors;
-
-#if CONFIG_HAL_BOARD_SUBTYPE != HAL_BOARD_SUBTYPE_LINUX_DISCO
-    BebopBLDC_Motor bebop_bldc_right_front, bebop_bldc_left_front,
-                    bebop_bldc_left_back, bebop_bldc_right_back;
-    /* Set motor order depending on BLDC version.On bebop 1 with version 1
-     * keep current order. The order changes from version 2 on bebop 1 and
-     * remains the same as this for bebop 2
-     */
-    if (info.version_maj == 1) {
-        bebop_bldc_right_front = BebopBLDC_Motor::MOTOR_1;
-        bebop_bldc_left_front  = BebopBLDC_Motor::MOTOR_2;
-        bebop_bldc_left_back   = BebopBLDC_Motor::MOTOR_3;
-        bebop_bldc_right_back  = BebopBLDC_Motor::MOTOR_4;
-    } else {
-        bebop_bldc_right_front = BebopBLDC_Motor::MOTOR_2;
-        bebop_bldc_left_front  = BebopBLDC_Motor::MOTOR_1;
-        bebop_bldc_left_back   = BebopBLDC_Motor::MOTOR_4;
-        bebop_bldc_right_back  = BebopBLDC_Motor::MOTOR_3;
-    }
-
-    bebop_bldc_channels[0] = bebop_bldc_right_front;
-    bebop_bldc_channels[1] = bebop_bldc_left_back;
-    bebop_bldc_channels[2] = bebop_bldc_left_front;
-    bebop_bldc_channels[3] = bebop_bldc_right_back;
-#endif
-
-    hw_version = Util::from(hal.util)->get_hw_arm32();
-    if (hw_version == UTIL_HARDWARE_BEBOP) {
-        _max_rpm = BEBOP_BLDC_MAX_RPM_1;
-    } else if (hw_version == UTIL_HARDWARE_BEBOP2) {
-        _max_rpm = BEBOP_BLDC_MAX_RPM_2;
-    } else if (hw_version == UTIL_HARDWARE_DISCO) {
-        _max_rpm = BEBOP_BLDC_MAX_RPM_DISCO;
-    } else if (hw_version < 0) {
-        AP_HAL::panic("RCOutput_Bebop: failed to get hw version %s", strerror(hw_version));
-    } else {
-        AP_HAL::panic("RCOutput_Bebop: unsupported hw version %d", hw_version);
-    }
-    printf("Bebop: vers %u/%u type %u nmotors %u n_flights %u last_flight_time %u total_flight_time %u maxrpm %u\n",
-           info.version_maj, info.version_min, info.type, info.n_motors,
-		   be16toh(info.n_flights), be16toh(info.last_flight_time),
-		   be32toh(info.total_flight_time), _max_rpm);
 
     while (true) {
         pthread_mutex_lock(&_mutex);
@@ -489,29 +510,55 @@ void RCOutput_Bebop::_run_rcout()
         memcpy(current_period_us, _period_us, sizeof(_period_us));
         pthread_mutex_unlock(&_mutex);
 
-        /* start propellers if the speed of the 4 motors is >= min speed
-         * min speed set to min_pwm + 50*/
+        // Start propellers if the speed of all 4 motors is >= min_pwm + 50
         for (i = 0; i < _n_motors; i++) {
             if (current_period_us[i] <= _min_pwm + 50) {
                 break;
             }
-            _rpm[static_cast<size_t>(bebop_bldc_channels[i])] = _period_us_to_rpm(current_period_us[i]);
+            _rpm[static_cast<size_t>(_channel_to_index[i])] = _period_us_to_rpm(current_period_us[i]);
         }
 
+		State state = _state.load(std::memory_order_relaxed);
         if (i < _n_motors) {
-            /* one motor pwm value is at minimum (or under)
-             * if the motors are started, stop them*/
-            if (_state == State::STARTED) {
+            // At least one motor pwm value is below the minimum. If the motors
+            // are started or there is an error, stop them and clear the error.
+            if (state == State::STARTED || state == State::ERROR) {
                 _stop_prop();
                 _clear_error();
             }
         } else {
-            /* all the motor pwm values are higher than minimum
-             * if the bldc is stopped, start it*/
-            if (_state == State::STOPPED) {
+            // All the motor pwm values are higher than minimum, so start the
+            // motors if stopped.
+            if (state == State::STOPPED) {
                 _start_prop();
             }
             _set_ref_speed(_rpm);
+        }
+
+        BebopBLDC_ObsData obs;
+        if (_read_obs_data(obs)) {
+            // sync our state from status. This makes us more robust to i2c errors
+            switch (obs.status) {
+            case BebopBLDC_Status::INIT:
+            case BebopBLDC_Status::IDLE:
+            case BebopBLDC_Status::STOPPING:
+            case BebopBLDC_Status::CRITICAL:
+                _state.store(State::STOPPED, std::memory_order_relaxed);
+                break;
+            case BebopBLDC_Status::RAMPING:
+            case BebopBLDC_Status::SPINNING_1:
+            case BebopBLDC_Status::SPINNING_2:
+                _state.store(State::STARTED, std::memory_order_relaxed);
+                break;
+            }
+
+            if (obs.error != BebopBLDC_Error::NONE) {
+                _state.store(State::ERROR, std::memory_order_relaxed);
+            }
+
+            pthread_mutex_lock(&_mutex);
+            _obs = obs;
+            pthread_mutex_unlock(&_mutex);
         }
     }
 }

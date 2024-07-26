@@ -73,6 +73,7 @@
     #define HAL_PARAM_DEFAULTS_PATH "/data/ftp/internal_000/ardupilot/bebop.parm"
     #define HAL_RCOUT_BEBOP_BLDC_I2C_BUS 1
     #define HAL_RCOUT_BEBOP_BLDC_I2C_ADDR 0x08
+    #define HAL_WITH_ESC_TELEM 1
     /* focal length 2.21mm pixel size 3.6 um, 2x binning in each direction
     * 240x240 crop rescaled to 64x64 */
     #define HAL_FLOW_PX4_FOCAL_LENGTH_MILLIPX (2.21 / (3.6 * 2.0 * 240 / 64))

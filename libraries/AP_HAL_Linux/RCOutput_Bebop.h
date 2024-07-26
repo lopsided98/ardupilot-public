@@ -2,6 +2,9 @@
 
 #include "AP_HAL_Linux.h"
 #include <AP_HAL/I2CDevice.h>
+#include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
+#include <atomic>
+#include <pthread.h>
 
 namespace Linux
 {
@@ -54,12 +57,13 @@ struct BebopBLDC_ObsData {
     uint8_t temperature;
 };
 
-class RCOutput_Bebop : public AP_HAL::RCOutput
+class RCOutput_Bebop : public AP_HAL::RCOutput, public AP_ESC_Telem_Backend
 {
 public:
     enum class State {
         STARTED,
         STOPPED,
+        ERROR,
     };
 
     RCOutput_Bebop(AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev);
@@ -79,27 +83,32 @@ public:
     void     push() override;
     uint16_t read(uint8_t ch) override;
     void     read(uint16_t* period_us, uint8_t len) override;
-    int      read_obs_data(BebopBLDC_ObsData &data);
     void     play_note(uint8_t pwm, uint16_t period_us, uint16_t duration_ms);
+    void     update();
+    BebopBLDC_ObsData get_obs_data();
 
 private:
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
     uint16_t _request_period_us[BEBOP_BLDC_MOTORS_NUM];
     uint16_t _period_us[BEBOP_BLDC_MOTORS_NUM];
     uint16_t _rpm[BEBOP_BLDC_MOTORS_NUM];
+    BebopBLDC_Motor _channel_to_index[BEBOP_BLDC_MOTORS_NUM];
+    uint8_t  _index_to_channel[BEBOP_BLDC_MOTORS_NUM];
     uint16_t _frequency;
     uint16_t _min_pwm;
     uint16_t _max_pwm;
     uint8_t  _n_motors{4};
-    State    _state{State::STOPPED};
+    std::atomic<State> _state{State::STOPPED};
     bool     _corking{false};
     uint16_t _max_rpm;
+    BebopBLDC_ObsData _obs;
 
     uint8_t _checksum(uint8_t *data, unsigned int len);
     void _start_prop();
     void _toggle_gpio(uint8_t mask);
     void _set_ref_speed(uint16_t rpm[BEBOP_BLDC_MOTORS_NUM]);
     bool _get_info(BebopBLDC_Info &info);
+    bool _read_obs_data(BebopBLDC_ObsData &obs);
     void _stop_prop();
     void _clear_error();
     void _play_sound(BebopBLDC_Sound sound);
